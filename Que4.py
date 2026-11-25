@@ -1,20 +1,26 @@
+
 import json
 import csv
 import requests
 from bs4 import BeautifulSoup
 import re
+from pathlib import Path
 
 # Wikipedia URL
 url = "https://en.wikipedia.org/wiki/List_of_Dublin_postal_districts"
 
-# Download the webpage
+# Step A: Download the webpage
 response = requests.get(
     url,
-    headers={"User-Agent": "StudentPostalDistrictScraper/1.0 (educational project)"},
+    headers={
+        "User-Agent": "StudentPostalDistrictScraper/1.0 (educational project)"
+    },
     timeout=20
 )
+
 response.raise_for_status()
 
+print("HTTP Status Code:", response.status_code)
 print("Webpage downloaded successfully!")
 
 # Parse HTML
@@ -23,73 +29,82 @@ soup = BeautifulSoup(response.text, "html.parser")
 # Dictionary to store postal districts
 postal_districts = {}
 
-# Find all district headings
+# Extract postal districts
 for heading in soup.find_all("h2"):
 
     title = heading.get_text(" ", strip=True)
 
-    match = re.fullmatch(
-        r"Dublin\s+(\d+)(?:\s+West)?\s*\((D\d+W?)\)",
+    match = re.search(
+        r"Dublin\s+\d+(?:\s+West)?\s*\((D\d+W?)\)",
         title
     )
 
     if not match:
         continue
 
-    district_code = match.group(2)
+    district_code = match.group(1)
     areas = []
 
-    # Read paragraphs after the heading
-    for element in heading.next_siblings:
+    # Find paragraphs after each district heading
+    for element in heading.find_all_next(["h2", "p"]):
 
-        if getattr(element, "name", None) == "h2":
+        if element.name == "h2":
             break
-
-        if getattr(element, "name", None) != "p":
-            continue
 
         text = element.get_text(" ", strip=True)
 
-        # Collect linked area names from the district description
         if "includes" in text.lower():
+
+            # Remove reference citations
+            for reference in element.select("sup"):
+                reference.decompose()
+
+            # Extract linked area names
             for link in element.find_all("a"):
+
                 area = link.get_text(" ", strip=True)
 
                 if area and area not in areas:
                     areas.append(area)
 
-    postal_districts[district_code] = areas
+    if areas:
+        postal_districts[district_code] = areas
 
-# Display extracted results
-for code, areas in postal_districts.items():
-    print(f"\nPostal District: {code}")
-    print("Areas:", ", ".join(areas))
-
+# Verify extracted data
 print("\nTotal districts found:", len(postal_districts))
-# Save scraped postal districts to JSON file
-with open("dublin_postal.json", "w", encoding="utf-8") as file:
-    json.dump(postal_districts, file, indent=4, ensure_ascii=False)
 
-print("\nPostal districts saved successfully to JSON!")
+if not postal_districts:
+    raise RuntimeError("No postal districts extracted.")
 
-# Read the JSON file to verify the saved data
-with open("dublin_postal.json", "r", encoding="utf-8") as file:
-    saved_data = json.load(file)
+print("Web scraping completed successfully!")
 
-print("Total districts in JSON:", len(saved_data))
+# Save files in the same folder as Que4.py
+folder = Path(__file__).resolve().parent
 
-# Read CSV file and display all postal districts
+json_path = folder / "dublin_postal.json"
+csv_path = folder / "dublin_postal.csv"
 
-print("\n==============================================")
-print("       DUBLIN POSTAL DISTRICTS")
-print("==============================================")
+# Step B: Store data in JSON file
+with open(json_path, "w", encoding="utf-8") as file:
+    json.dump(
+        postal_districts,
+        file,
+        indent=4,
+        ensure_ascii=False
+    )
 
-# Read JSON file
-with open("dublin_postal.json", "r", encoding="utf-8") as file:
+print("\nJSON file created successfully!")
+print("JSON location:", json_path)
+
+# Step C: Read JSON file
+with open(json_path, "r", encoding="utf-8") as file:
     postal_data = json.load(file)
 
-# Create CSV file
-with open("dublin_postal.csv", "w", newline="", encoding="utf-8-sig") as file:
+print("Data retrieved from JSON successfully!")
+
+# Transfer JSON data to CSV
+with open(csv_path, "w", newline="", encoding="utf-8-sig") as file:
+
     writer = csv.writer(file)
 
     writer.writerow(["Postal District", "Area Name"])
@@ -98,4 +113,20 @@ with open("dublin_postal.csv", "w", newline="", encoding="utf-8-sig") as file:
         for area in areas:
             writer.writerow([district, area])
 
-print("CSV file created successfully!")
+print("\nCSV file created successfully!")
+print("CSV location:", csv_path)
+
+# Step D: Read CSV and display data
+print("\n==============================================")
+print("          DUBLIN POSTAL DISTRICTS")
+print("==============================================")
+
+with open(csv_path, "r", encoding="utf-8-sig") as file:
+
+    reader = csv.reader(file)
+
+    for row in reader:
+        print(f"{row[0]:<18} {row[1]}")
+
+print("\nAll CSV records displayed successfully!")
+print("Program completed successfully!")
